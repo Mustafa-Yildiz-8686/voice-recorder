@@ -7,6 +7,7 @@
 #include <cmath>
 #include <ctime>
 #include <string>
+#include <vector>
 #include <algorithm>
 #include <sys/select.h>
 #include <unistd.h>
@@ -100,12 +101,15 @@ void vuMeterThread(const Config &cfg) {
         int y = std::max(0, std::min(bars, redAt) - yellowAt);
         int r = std::max(0, bars - redAt);
 
+        // Split bar into colour zones — only emit escape codes if zone is non-empty
+        std::string greenPart  = (g > 0) ? "\033[32m" + meter.substr(0, g)        + "\033[0m" : "";
+        std::string yellowPart = (y > 0) ? "\033[33m" + meter.substr(yellowAt, y) + "\033[0m" : "";
+        std::string redPart    = (r > 0) ? "\033[31m" + meter.substr(redAt, r)    + "\033[0m" : "";
+
         std::cout
             << "\r\033[K"
             << "Level: ["
-            << "\033[32m" << meter.substr(0, g)             << "\033[0m"
-            << "\033[33m" << meter.substr(yellowAt, y)       << "\033[0m"
-            << "\033[31m" << meter.substr(redAt, r)          << "\033[0m"
+            << greenPart << yellowPart << redPart
             << std::string(width - bars, ' ')
             << "] "
             << std::fixed << std::setprecision(1) << (level * 100.0f) << "%"
@@ -216,12 +220,12 @@ int main() {
     std::thread vuThr(vuMeterThread, std::cref(cfg));
 
     // --- Recording loop ---
-    const int  bufSamples = cfg.framesPerBuffer * cfg.numChannels;
-    short      buffer[bufSamples];
-    sf_count_t totalFrames = 0;
+    const int        bufSamples = cfg.framesPerBuffer * cfg.numChannels;
+    std::vector<short> buffer(bufSamples);
+    sf_count_t       totalFrames = 0;
 
     while (keepRecording) {
-        err = Pa_ReadStream(paGuard.stream, buffer, cfg.framesPerBuffer);
+        err = Pa_ReadStream(paGuard.stream, buffer.data(), cfg.framesPerBuffer);
 
         if (err == paInputOverflowed) {
             peakLevel.store(0.0f); // show silence for this window
@@ -234,12 +238,12 @@ int main() {
         }
 
         // Push peak to VU meter (keep the higher value if meter hasn't consumed yet)
-        float newPeak = computePeak(buffer, bufSamples);
+        float newPeak = computePeak(buffer.data(), bufSamples);
         float cur = peakLevel.load();
         while (newPeak > cur && !peakLevel.compare_exchange_weak(cur, newPeak));
 
         // Write frames
-        sf_count_t written = sf_write_short(rawFile, buffer, cfg.framesPerBuffer);
+        sf_count_t written = sf_write_short(rawFile, buffer.data(), cfg.framesPerBuffer);
         if (written != cfg.framesPerBuffer) {
             std::cerr << "\nsndfile write error: expected " << cfg.framesPerBuffer
                       << " frames, got " << written << "\n";
