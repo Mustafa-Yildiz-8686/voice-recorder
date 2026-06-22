@@ -1,0 +1,19 @@
+# Compiled binaries
+recorder
+*.o
+*.out
+
+# Recordings output
+recording_*.wav
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
